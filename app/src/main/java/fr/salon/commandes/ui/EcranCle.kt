@@ -25,10 +25,12 @@ fun EcranCle(alerte: String, onValider: (String) -> Unit) {
     var cle by remember { mutableStateOf("") }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("Accès du personnel", style = MaterialTheme.typography.headlineSmall)
+        Text(text = "Accès du personnel", style = MaterialTheme.typography.headlineSmall)
 
         OutlinedTextField(
             value = cle,
@@ -36,19 +38,28 @@ fun EcranCle(alerte: String, onValider: (String) -> Unit) {
             label = { Text("Clé d'accès") },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp),
         )
 
         Button(
             onClick = { onValider(cle) },
             enabled = cle.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp).heightIn(min = 48.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp)
+                .heightIn(min = 48.dp),
         ) {
             Text("Valider")
         }
 
         if (alerte.isNotEmpty()) {
-            Text(alerte, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 12.dp))
+            Text(
+                text = alerte,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 12.dp),
+            )
         }
     }
 }

@@ -24,8 +24,8 @@ import androidx.compose.ui.unit.dp
 import fr.salon.commandes.AppViewModel
 import fr.salon.commandes.data.Commande
 
-// Libellés et étapes suivantes, identiques à ceux de l'interface web
-val LIBELLES = mapOf(
+// Libellés et étapes, identiques à ceux de l'interface web
+private val LIBELLES = mapOf(
     "en_attente" to "En attente",
     "en_preparation" to "En préparation",
     "prete" to "Prête",
@@ -33,14 +33,14 @@ val LIBELLES = mapOf(
     "payee" to "Payée",
 )
 
-val SUIVANT = mapOf(
+private val SUIVANT = mapOf(
     "en_attente" to "en_preparation",
     "en_preparation" to "prete",
     "prete" to "servie",
     "servie" to "payee",
 )
 
-val ACTION = mapOf(
+private val ACTION = mapOf(
     "en_attente" to "Démarrer",
     "en_preparation" to "Marquer prête",
     "prete" to "Marquer servie",
@@ -52,72 +52,82 @@ fun EcranPrincipal(vm: AppViewModel) {
     val etat by vm.etat.collectAsState()
 
     if (!etat.cleValide) {
-        EcranCle(alerte = etat.alerte, onValider = vm::valider)
+        EcranCle(alerte = etat.alerte, onValider = { cle -> vm.valider(cle) })
         return
     }
 
     val message = etat.alerte.ifEmpty { etat.connexion }
 
     LazyColumn(
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxSize(),
     ) {
         item {
-            Text("Prise de commande", style = MaterialTheme.typography.headlineSmall)
+            Text(text = "Prise de commande", style = MaterialTheme.typography.headlineSmall)
         }
 
         item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("Nouvelle commande", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
-                    CarteFormulaire(menu = etat.menu) { table, lignes ->
-                        vm.creerCommande(table, lignes) {}
-                    }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(text = "Nouvelle commande", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    CarteFormulaire(
+                        menu = etat.menu,
+                        onEnvoyer = { table, lignes -> vm.creerCommande(table, lignes) },
+                    )
                 }
             }
         }
 
         if (message.isNotEmpty()) {
             item {
-                Text(message, color = MaterialTheme.colorScheme.error)
+                Text(text = message, color = MaterialTheme.colorScheme.error)
             }
         }
 
         item {
-            Text("Commandes en cours", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Commandes en cours", style = MaterialTheme.typography.titleMedium)
         }
 
         if (etat.commandes.isEmpty()) {
-            item { Text("Aucune commande en cours.") }
+            item {
+                Text(text = "Aucune commande en cours.")
+            }
         }
 
-        items(etat.commandes, key = { it.id }) { commande ->
-            CarteCommande(commande) { vm.changerStatut(commande.id, SUIVANT.getValue(commande.statut)) }
+        items(items = etat.commandes, key = { it.id }) { commande ->
+            CarteCommande(
+                commande = commande,
+                onAvancer = { statut -> vm.changerStatut(commande.id, statut) },
+            )
         }
     }
 }
 
 @Composable
-fun CarteCommande(commande: Commande, onAvancer: () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
+private fun CarteCommande(commande: Commande, onAvancer: (String) -> Unit) {
+    val suivant = SUIVANT[commande.statut]
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                "Table ${commande.table} · ${LIBELLES[commande.statut] ?: commande.statut}",
+                text = "Table ${commande.table} · ${LIBELLES[commande.statut] ?: commande.statut}",
                 fontWeight = FontWeight.Bold,
             )
-            Spacer(Modifier.height(6.dp))
-            commande.lignes.forEach { ligne ->
-                Text("${ligne.quantite} × ${ligne.produit}")
+            Spacer(modifier = Modifier.height(6.dp))
+            for (ligne in commande.lignes) {
+                Text(text = "${ligne.quantite} × ${ligne.produit}")
             }
-            if (SUIVANT.containsKey(commande.statut)) {
-                Spacer(Modifier.height(10.dp))
+            if (suivant != null) {
+                Spacer(modifier = Modifier.height(10.dp))
                 Button(
-                    onClick = onAvancer,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    onClick = { onAvancer(suivant) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp),
                 ) {
-                    Text(ACTION[commande.statut] ?: "Suivant")
+                    Text(text = ACTION[commande.statut] ?: "Suivant")
                 }
             }
         }

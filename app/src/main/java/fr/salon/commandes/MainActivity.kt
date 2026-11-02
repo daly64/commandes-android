@@ -15,8 +15,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                Surface(Modifier.fillMaxSize()) {
-                    EcranPrincipal(viewModel<AppViewModel>())
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    val vm: AppViewModel = viewModel()
+                    EcranPrincipal(vm)
                 }
             }
         }

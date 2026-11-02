@@ -5,6 +5,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// Adresse de l'API : variable d'environnement API_URL (secret GitHub), sinon valeur par défaut.
+// Elle doit se terminer par « / ».
+val apiUrl: String = System.getenv("API_URL")?.takeIf { it.isNotBlank() }
+    ?: "https://VOTRE-PROJET.vercel.app/"
+
 android {
     namespace = "fr.salon.commandes"
     compileSdk = 35
@@ -16,8 +21,7 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        // Adresse de l'API déployée. Doit se terminer par « / ».
-        buildConfigField("String", "API_URL", "\"${System.getenv("API_URL") ?: "https://VOTRE-PROJET.vercel.app/"}\"")
+        buildConfigField("String", "API_URL", "\"$apiUrl\"")
     }
 
     buildTypes {
@@ -42,13 +46,12 @@ android {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2024.10.01"))
+    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
-    implementation("androidx.security:security-crypto:1.0.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

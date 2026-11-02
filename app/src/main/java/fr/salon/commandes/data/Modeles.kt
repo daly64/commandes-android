@@ -5,34 +5,49 @@ import kotlinx.serialization.Serializable
 // Modèles qui correspondent aux réponses de l'API commandes
 
 @Serializable
-data class Categorie(val id: String, val nom: String, val visible: Boolean)
+data class Categorie(
+    val id: String,
+    val nom: String,
+    val visible: Boolean = true,
+)
 
 @Serializable
 data class Produit(
     val id: String,
     val nom: String,
-    val prix: Double,
+    val prix: Double = 0.0,
     val categorieId: String,
-    val visible: Boolean,
+    val visible: Boolean = true,
 )
 
 @Serializable
-data class Menu(val categories: List<Categorie>, val produits: List<Produit>)
+data class Menu(
+    val categories: List<Categorie> = emptyList(),
+    val produits: List<Produit> = emptyList(),
+)
 
 @Serializable
-data class LigneCommande(val produit: String, val quantite: Int)
+data class LigneCommande(
+    val produit: String,
+    val quantite: Int,
+)
 
 @Serializable
 data class Commande(
     val id: Int,
     val table: Int,
-    val lignes: List<LigneCommande>,
+    val lignes: List<LigneCommande> = emptyList(),
     val statut: String,
-    val creeeLe: String,
+    val creeeLe: String = "",
 )
 
 @Serializable
-data class NouvelleCommande(val table: Int, val lignes: List<LigneCommande>)
+data class NouvelleCommande(
+    val table: Int,
+    val lignes: List<LigneCommande>,
+)
 
 @Serializable
-data class ChangementStatut(val statut: String)
+data class ChangementStatut(
+    val statut: String,
+)

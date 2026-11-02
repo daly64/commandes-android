@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -25,7 +24,7 @@ import java.io.IOException
 
 private const val INTERVALLE_MS = 3000L
 
-// État affiché à l'écran
+// Ce que l'écran affiche
 data class Etat(
     val cleValide: Boolean,
     val menu: Menu? = null,
@@ -39,16 +38,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val store = CleStore(application)
     private val api = ApiClient { store.lire().orEmpty() }
 
-    // Une seule lecture à la fois, pour que les réponses arrivent dans l'ordre
+    // Une seule lecture à la fois, pour que les réponses s'appliquent dans l'ordre
     private val verrou = Mutex()
 
     private val _etat = MutableStateFlow(Etat(cleValide = store.lire() != null))
     val etat: StateFlow<Etat> = _etat.asStateFlow()
 
     init {
-        // Interrogation régulière de l'API tant que la clé est valide
+        // Interrogation régulière de l'API ; s'arrête quand le ViewModel est détruit
         viewModelScope.launch {
-            while (isActive) {
+            while (true) {
                 rafraichir()
                 delay(INTERVALLE_MS)
             }
@@ -61,18 +60,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { rafraichir() }
     }
 
-    fun creerCommande(table: Int, lignes: List<LigneCommande>, onOk: () -> Unit) {
+    fun creerCommande(table: Int, lignes: List<LigneCommande>) {
         action {
             withContext(Dispatchers.IO) { api.creerCommande(NouvelleCommande(table, lignes)) }
-            onOk()
         }
     }
 
     fun changerStatut(id: Int, statut: String) {
-        action { withContext(Dispatchers.IO) { api.changerStatut(id, statut) } }
+        action {
+            withContext(Dispatchers.IO) { api.changerStatut(id, statut) }
+        }
     }
 
-    // Exécute une action utilisateur, affiche son éventuelle erreur, puis relit la liste
+    // Exécute une action, affiche son éventuelle erreur, puis relit la liste
     private fun action(bloc: suspend () -> Unit) {
         viewModelScope.launch {
             try {
@@ -87,36 +87,38 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun rafraichir() = verrou.withLock {
-        if (!_etat.value.cleValide) return@withLock
+    private suspend fun rafraichir() {
+        verrou.withLock {
+            if (!_etat.value.cleValide) return@withLock
 
-        // Le menu est relu tant qu'il n'a pas été chargé une fois
-        if (_etat.value.menu == null) {
-            try {
-                val menu = withContext(Dispatchers.IO) { api.menu() }
-                _etat.update { it.copy(menu = menu) }
-            } catch (e: Exception) {
-                // Réessayé au prochain cycle
+            // Le menu est relu tant qu'il n'a pas été chargé une fois
+            if (_etat.value.menu == null) {
+                try {
+                    val menu = withContext(Dispatchers.IO) { api.menu() }
+                    _etat.update { it.copy(menu = menu) }
+                } catch (e: Exception) {
+                    // Nouvel essai au prochain cycle
+                }
             }
-        }
 
-        try {
-            val commandes = withContext(Dispatchers.IO) { api.commandes() }
-            _etat.update { it.copy(commandes = commandes, connexion = "") }
-        } catch (e: ErreurApi) {
-            gererErreur(e)
-        } catch (e: IOException) {
-            _etat.update { it.copy(connexion = "Serveur injoignable, nouvelle tentative…") }
+            try {
+                val commandes = withContext(Dispatchers.IO) { api.commandes() }
+                _etat.update { it.copy(commandes = commandes, connexion = "") }
+            } catch (e: ErreurApi) {
+                gererErreur(e)
+            } catch (e: IOException) {
+                _etat.update { it.copy(connexion = "Serveur injoignable, nouvelle tentative…") }
+            }
         }
     }
 
-    // Une clé refusée renvoie à l'écran de saisie ; les autres erreurs sont affichées
+    // Clé refusée : retour à l'écran de saisie. Autres erreurs : message affiché.
     private fun gererErreur(e: ErreurApi) {
         if (e.code == 401) {
             store.effacer()
             _etat.update { Etat(cleValide = false, alerte = "Clé refusée") }
         } else {
-            _etat.update { it.copy(alerte = e.message ?: "Erreur") }
+            _etat.update { it.copy(alerte = e.message ?: "Erreur ${e.code}") }
         }
     }
 }
