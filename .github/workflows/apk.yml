@@ -21,7 +21,7 @@ jobs:
           gradle-version: '8.10.2'
 
       - name: Compiler l'APK de test
-        run: gradle assembleDebug --no-daemon
+        run: gradle assembleDebug --no-daemon --stacktrace
         env:
           # Adresse de l'API, définie dans les secrets du dépôt (Settings > Secrets and variables > Actions)
           API_URL: ${{ secrets.API_URL }}
