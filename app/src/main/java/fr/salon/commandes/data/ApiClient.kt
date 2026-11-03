@@ -1,86 +1,111 @@
 package fr.salon.commandes.data
 
-import fr.salon.commandes.BuildConfig
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
-// Erreur renvoyée par l'API : code HTTP et message lisible
-class ErreurApi(val code: Int, message: String) : Exception(message)
+// Erreur renvoyée par l'API GraphQL : code (extensions.code) et message lisible
+class ErreurApi(val code: String, message: String) : Exception(message)
 
-// Tous les appels réseau passent par cette classe. Ces fonctions sont bloquantes :
-// elles doivent être appelées hors du thread principal (Dispatchers.IO).
-class ApiClient(private val cle: () -> String) {
+private val REQUETE_MENU = """
+    query { menu { categories { id nom visible } produits { id nom prix categorieId visible } } }
+"""
+
+private val REQUETE_COMMANDES = """
+    query { commandes { id table statut creeeLe lignes { produit quantite } } }
+"""
+
+private val MUTATION_CREER = """
+    mutation(${'$'}table: Int!, ${'$'}lignes: [LigneCommandeInput!]!) {
+      creerCommande(table: ${'$'}table, lignes: ${'$'}lignes) { id }
+    }
+"""
+
+private val MUTATION_STATUT = """
+    mutation(${'$'}id: ID!, ${'$'}statut: Statut!) {
+      changerStatut(id: ${'$'}id, statut: ${'$'}statut) { id statut }
+    }
+"""
+
+// Accès à l'API GraphQL. Fonctions bloquantes : à appeler hors du thread principal (Dispatchers.IO).
+class ApiClient(private val urlBase: String, private val cle: () -> String) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
     private val http = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
-    private val base = BuildConfig.API_URL
     private val typeJson = "application/json".toMediaType()
 
     fun menu(): Menu {
-        val texte = executer(requete("api/menu", avecCle = false))
-        return json.decodeFromString(Menu.serializer(), texte)
+        val donnees = executer(REQUETE_MENU)
+        return json.decodeFromJsonElement(Menu.serializer(), donnees.getValue("menu"))
     }
 
     fun commandes(): List<Commande> {
-        val texte = executer(requete("api/commandes"))
-        return json.decodeFromString(ListSerializer(Commande.serializer()), texte)
+        val donnees = executer(REQUETE_COMMANDES)
+        return json.decodeFromJsonElement(ListSerializer(Commande.serializer()), donnees.getValue("commandes"))
     }
 
-    fun creerCommande(nouvelle: NouvelleCommande): Commande {
-        val corps = json.encodeToString(NouvelleCommande.serializer(), nouvelle).toRequestBody(typeJson)
-        val texte = executer(requete("api/commandes").post(corps))
-        return json.decodeFromString(Commande.serializer(), texte)
-    }
-
-    fun changerStatut(id: Int, statut: String): Commande {
-        val corps = json.encodeToString(ChangementStatut.serializer(), ChangementStatut(statut))
-            .toRequestBody(typeJson)
-        val texte = executer(requete("api/commandes/$id/statut").patch(corps))
-        return json.decodeFromString(Commande.serializer(), texte)
-    }
-
-    private fun requete(chemin: String, avecCle: Boolean = true): Request.Builder {
-        val builder = Request.Builder().url(base + chemin)
-        if (avecCle) {
-            builder.header("X-Api-Key", cle())
+    fun creerCommande(table: Int, lignes: List<LigneCommande>) {
+        val variables = buildJsonObject {
+            put("table", table)
+            put("lignes", json.encodeToJsonElement(ListSerializer(LigneCommande.serializer()), lignes))
         }
-        return builder
+        executer(MUTATION_CREER, variables)
     }
 
-    // Exécute la requête et renvoie le corps de la réponse, ou lève une ErreurApi
-    private fun executer(builder: Request.Builder): String {
-        http.newCall(builder.build()).execute().use { reponse ->
+    fun changerStatut(id: String, statut: Statut) {
+        val variables = buildJsonObject {
+            put("id", id)
+            put("statut", statut.name)
+        }
+        executer(MUTATION_STATUT, variables)
+    }
+
+    // Envoie une opération GraphQL et renvoie « data », ou lève une ErreurApi
+    private fun executer(requete: String, variables: JsonObject = JsonObject(emptyMap())): JsonObject {
+        val corps = buildJsonObject {
+            put("query", requete.trimIndent())
+            put("variables", variables)
+        }.toString().toRequestBody(typeJson)
+
+        val requeteHttp = Request.Builder()
+            .url(urlBase + "graphql")
+            .header("X-Api-Key", cle())
+            .post(corps)
+            .build()
+
+        http.newCall(requeteHttp).execute().use { reponse ->
             val texte = reponse.body?.string().orEmpty()
-            if (!reponse.isSuccessful) {
-                throw ErreurApi(reponse.code, messageErreur(texte, reponse.code))
+            val racine = try {
+                json.parseToJsonElement(texte).jsonObject
+            } catch (e: Exception) {
+                throw ErreurApi("HTTP_${reponse.code}", "Réponse inattendue du serveur (${reponse.code})")
             }
-            return texte
-        }
-    }
 
-    // L'API renvoie { "erreur": "..." } ou { "erreurs": ["...", "..."] }
-    private fun messageErreur(texte: String, code: Int): String {
-        return try {
-            val objet = json.parseToJsonElement(texte).jsonObject
-            val liste = objet["erreurs"] as? JsonArray
-            liste?.joinToString(" ; ") { it.jsonPrimitive.content }
-                ?: objet["erreur"]?.jsonPrimitive?.content
-                ?: "Erreur $code"
-        } catch (e: Exception) {
-            "Erreur $code"
+            val erreurs = racine["errors"] as? JsonArray
+            if (erreurs != null && erreurs.isNotEmpty()) {
+                val premiere = erreurs[0].jsonObject
+                val code = premiere["extensions"]?.jsonObject?.get("code")?.jsonPrimitive?.contentOrNull ?: "ERREUR"
+                val message = premiere["message"]?.jsonPrimitive?.contentOrNull ?: "Erreur"
+                throw ErreurApi(code, message)
+            }
+
+            return racine["data"] as? JsonObject ?: throw ErreurApi("ERREUR", "Réponse vide du serveur")
         }
     }
 }

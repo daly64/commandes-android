@@ -1,53 +1,65 @@
 # Commandes Salon (Android)
 
-Application Android de prise de commande pour le salon de thé. Elle utilise l'API `api-commandes`.
+Application Android de prise de commande pour le salon de thé. Elle utilise l'API GraphQL `api-commandes`.
 
-Kotlin, Jetpack Compose, OkHttp, kotlinx.serialization.
+Kotlin, Jetpack Compose (Material 3), OkHttp, kotlinx.serialization.
 
 ## Fonctionnalités
 
-- Saisie de la clé d'accès du personnel (la même que `API_KEY` côté serveur).
-- Nouvelle commande : table de 1 à 10, produits du menu regroupés par catégorie, quantités de 1 à 50.
-- Liste des commandes en cours, avec le bouton de l'étape suivante : Démarrer, Marquer prête, Marquer servie, Marquer payée.
+- **Accès** : saisie de la clé du personnel (la même que `API_KEY` côté serveur), sur une carte centrée.
+- **Nouvelle commande** :
+  - grille de 10 tables en grandes cases ;
+  - produits du menu en cartes, regroupés par catégorie : un appui ajoute une unité, « − » en retire une ;
+  - panier fixe en bas de l'écran avec la table, le nombre d'articles, le total en dinars et le bouton d'envoi.
+- **En cours** : une carte par commande, avec une bande de couleur selon le statut, le numéro de table, l'ancienneté, les produits et le bouton de l'étape suivante (Démarrer, Marquer prête, Marquer servie, Marquer payée). Le nombre de commandes s'affiche sur l'onglet.
 - Rafraîchissement automatique toutes les 3 secondes.
 
-## Obtenir l'APK (GitHub Actions)
+## API utilisée
 
-1. Dans le dépôt : **Settings > Secrets and variables > Actions > New repository secret**.
-   Nom : `API_URL`. Valeur : l'adresse de l'API, terminée par `/` (par exemple `https://mon-api.vercel.app/`).
-2. Chaque envoi sur `main` lance le workflow **Générer l'APK**. On peut aussi le lancer à la main : onglet **Actions**, puis **Run workflow**.
-3. Quand le run est vert, l'APK `commandes-salon-debug` se télécharge en bas de la page du run, dans **Artifacts**.
-4. Décompressez l'archive téléchargée et installez `app-debug.apk` sur le téléphone (autorisez l'installation d'applications de sources inconnues).
+L'application appelle `<API_URL>graphql`. Par défaut, `API_URL` vaut `https://api-commandes-dun.vercel.app/`.
+Pour viser une autre API, définissez le secret `API_URL` du dépôt (*Settings > Secrets and variables > Actions*), terminé par `/`.
+
+Opérations GraphQL utilisées : `menu`, `commandes`, `creerCommande`, `changerStatut`.
+
+## Obtenir l'APK
+
+Chaque envoi sur `main` lance le workflow **Générer l'APK** (onglet **Actions**). L'APK est publié :
+- dans la release `apk-latest`, téléchargeable sans connexion :
+  https://github.com/daly64/commandes-android/releases/download/apk-latest/app-debug.apk
+- en artefact `commandes-salon-debug` sur la page du run.
+
+En cas d'échec, le journal complet est publié dans la release `build-log`.
 
 ## Compiler sur son poste
-
-Ouvrez le dossier dans Android Studio, ou lancez :
 
 ```bash
 ./gradlew assembleDebug
 ```
 
 L'APK est produit dans `app/build/outputs/apk/debug/app-debug.apk`.
-Sans variable `API_URL`, l'application vise l'adresse factice `https://VOTRE-PROJET.vercel.app/`.
 
 ## Structure
 
 ```
 app/src/main/java/fr/salon/commandes/
-├── MainActivity.kt          point d'entrée
-├── AppViewModel.kt          état, rafraîchissement, actions
+├── MainActivity.kt              point d'entrée
+├── AppViewModel.kt              état, panier, rafraîchissement, actions
 ├── data/
-│   ├── Modeles.kt           modèles (menu, commandes)
-│   ├── ApiClient.kt         appels HTTP vers l'API
-│   └── CleStore.kt          stockage de la clé
+│   ├── Modeles.kt               modèles et statuts
+│   ├── ApiClient.kt             client GraphQL
+│   └── CleStore.kt              stockage de la clé
 └── ui/
-    ├── EcranCle.kt          saisie de la clé
-    ├── EcranPrincipal.kt    écran principal et cartes de commande
-    └── CarteFormulaire.kt   formulaire de nouvelle commande
+    ├── theme/Theme.kt           couleurs, couleurs des statuts
+    ├── Composants.kt            éléments communs (prix, ancienneté, pastille)
+    ├── EcranCle.kt              carte d'accès
+    ├── EcranPrincipal.kt        barre du haut, onglets, messages
+    ├── EcranNouvelleCommande.kt tables, cartes produits, panier
+    └── EcranCommandes.kt        cartes des commandes en cours
 ```
 
 ## Limites
 
-- Pas de temps réel : l'application interroge l'API toutes les 3 secondes.
-- La clé est partagée par tout le personnel. Elle est gardée dans le stockage privé de l'application, sans chiffrement supplémentaire.
+- Pas de temps réel : l'API sur Vercel n'accepte pas les WebSockets, l'application interroge donc l'API toutes les 3 secondes.
+- La clé est partagée par tout le personnel et gardée dans le stockage privé de l'application.
+- Le total affiché est calculé dans l'application : l'API n'enregistre pas les prix.
 - APK de test (debug), non signé pour le Play Store.

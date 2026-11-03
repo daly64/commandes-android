@@ -2,7 +2,7 @@ package fr.salon.commandes.data
 
 import kotlinx.serialization.Serializable
 
-// Modèles qui correspondent aux réponses de l'API commandes
+// Modèles qui correspondent au schéma GraphQL de l'API commandes
 
 @Serializable
 data class Categorie(
@@ -34,20 +34,25 @@ data class LigneCommande(
 
 @Serializable
 data class Commande(
-    val id: Int,
+    val id: String,
     val table: Int,
     val lignes: List<LigneCommande> = emptyList(),
     val statut: String,
     val creeeLe: String = "",
 )
 
-@Serializable
-data class NouvelleCommande(
-    val table: Int,
-    val lignes: List<LigneCommande>,
-)
+// Étapes d'une commande, dans l'ordre, avec le libellé du bouton qui mène à l'étape suivante
+enum class Statut(val libelle: String, val action: String?) {
+    EN_ATTENTE("En attente", "Démarrer"),
+    EN_PREPARATION("En préparation", "Marquer prête"),
+    PRETE("Prête", "Marquer servie"),
+    SERVIE("Servie", "Marquer payée"),
+    PAYEE("Payée", null);
 
-@Serializable
-data class ChangementStatut(
-    val statut: String,
-)
+    val suivant: Statut?
+        get() = entries.getOrNull(ordinal + 1)
+
+    companion object {
+        fun de(valeur: String): Statut? = entries.firstOrNull { it.name == valeur }
+    }
+}

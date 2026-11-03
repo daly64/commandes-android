@@ -9,7 +9,7 @@ import fr.salon.commandes.data.Commande
 import fr.salon.commandes.data.ErreurApi
 import fr.salon.commandes.data.LigneCommande
 import fr.salon.commandes.data.Menu
-import fr.salon.commandes.data.NouvelleCommande
+import fr.salon.commandes.data.Statut
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,20 +23,26 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 
 private const val INTERVALLE_MS = 3000L
+private const val QUANTITE_MAX = 50
 
-// Ce que l'écran affiche
+// Tout ce que l'interface affiche
 data class Etat(
     val cleValide: Boolean,
+    val alerteCle: String = "",              // message de l'écran de clé
     val menu: Menu? = null,
     val commandes: List<Commande> = emptyList(),
-    val connexion: String = "", // état de la liaison avec le serveur
-    val alerte: String = "",    // message de la dernière action ou de l'écran de clé
+    val table: Int? = null,                  // table choisie pour la nouvelle commande
+    val panier: Map<String, Int> = emptyMap(), // identifiant du produit -> quantité
+    val envoiEnCours: Boolean = false,
+    val enCours: Set<String> = emptySet(),   // commandes dont le statut est en train de changer
+    val connexion: String = "",              // problème de liaison avec le serveur
+    val message: String? = null,             // message ponctuel (barre en bas de l'écran)
 )
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val store = CleStore(application)
-    private val api = ApiClient { store.lire().orEmpty() }
+    private val api = ApiClient(BuildConfig.API_URL) { store.lire().orEmpty() }
 
     // Une seule lecture à la fois, pour que les réponses s'appliquent dans l'ordre
     private val verrou = Mutex()
@@ -54,38 +60,104 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // --- Clé d'accès ---
+
     fun valider(cle: String) {
         store.enregistrer(cle.trim())
-        _etat.update { it.copy(cleValide = true, alerte = "") }
+        _etat.update { it.copy(cleValide = true, alerteCle = "") }
         viewModelScope.launch { rafraichir() }
     }
 
-    fun creerCommande(table: Int, lignes: List<LigneCommande>) {
-        action {
-            withContext(Dispatchers.IO) { api.creerCommande(NouvelleCommande(table, lignes)) }
+    fun deconnecter() {
+        store.effacer()
+        _etat.value = Etat(cleValide = false)
+    }
+
+    // --- Nouvelle commande ---
+
+    fun choisirTable(numero: Int) {
+        _etat.update { it.copy(table = numero) }
+    }
+
+    fun ajouter(produitId: String) {
+        _etat.update {
+            val quantite = minOf((it.panier[produitId] ?: 0) + 1, QUANTITE_MAX)
+            it.copy(panier = it.panier + (produitId to quantite))
         }
     }
 
-    fun changerStatut(id: Int, statut: String) {
-        action {
-            withContext(Dispatchers.IO) { api.changerStatut(id, statut) }
+    fun retirer(produitId: String) {
+        _etat.update {
+            val quantite = (it.panier[produitId] ?: 0) - 1
+            val panier = if (quantite <= 0) it.panier - produitId else it.panier + (produitId to quantite)
+            it.copy(panier = panier)
         }
     }
 
-    // Exécute une action, affiche son éventuelle erreur, puis relit la liste
-    private fun action(bloc: suspend () -> Unit) {
+    fun viderPanier() {
+        _etat.update { it.copy(panier = emptyMap()) }
+    }
+
+    fun envoyer() {
+        val etat = _etat.value
+        val table = etat.table
+        val menu = etat.menu
+        if (table == null) {
+            afficher("Choisissez une table")
+            return
+        }
+        if (menu == null) return
+
+        // L'API attend le nom du produit
+        val lignes = etat.panier.mapNotNull { (id, quantite) ->
+            menu.produits.firstOrNull { it.id == id }?.let { LigneCommande(it.nom.trim(), quantite) }
+        }
+        if (lignes.isEmpty()) {
+            afficher("Le panier est vide")
+            return
+        }
+
+        _etat.update { it.copy(envoiEnCours = true) }
         viewModelScope.launch {
             try {
-                bloc()
-                _etat.update { it.copy(alerte = "") }
+                withContext(Dispatchers.IO) { api.creerCommande(table, lignes) }
+                _etat.update {
+                    it.copy(panier = emptyMap(), table = null, message = "Commande envoyée pour la table $table")
+                }
             } catch (e: ErreurApi) {
                 gererErreur(e)
             } catch (e: IOException) {
-                _etat.update { it.copy(alerte = "Serveur injoignable") }
+                afficher("Serveur injoignable, la commande n'a pas été envoyée")
+            } finally {
+                _etat.update { it.copy(envoiEnCours = false) }
             }
             rafraichir()
         }
     }
+
+    // --- Commandes en cours ---
+
+    fun avancer(commande: Commande) {
+        val suivant = Statut.de(commande.statut)?.suivant ?: return
+        _etat.update { it.copy(enCours = it.enCours + commande.id) }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { api.changerStatut(commande.id, suivant) }
+            } catch (e: ErreurApi) {
+                gererErreur(e)
+            } catch (e: IOException) {
+                afficher("Serveur injoignable")
+            }
+            rafraichir()
+            _etat.update { it.copy(enCours = it.enCours - commande.id) }
+        }
+    }
+
+    fun messageVu() {
+        _etat.update { it.copy(message = null) }
+    }
+
+    // --- Interne ---
 
     private suspend fun rafraichir() {
         verrou.withLock {
@@ -105,20 +177,29 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val commandes = withContext(Dispatchers.IO) { api.commandes() }
                 _etat.update { it.copy(commandes = commandes, connexion = "") }
             } catch (e: ErreurApi) {
-                gererErreur(e)
+                if (e.code == "UNAUTHENTICATED") {
+                    gererErreur(e)
+                } else {
+                    _etat.update { it.copy(connexion = e.message ?: "Erreur du serveur") }
+                }
             } catch (e: IOException) {
                 _etat.update { it.copy(connexion = "Serveur injoignable, nouvelle tentative…") }
             }
         }
     }
 
-    // Clé refusée : retour à l'écran de saisie. Autres erreurs : message affiché.
     private fun gererErreur(e: ErreurApi) {
-        if (e.code == 401) {
-            store.effacer()
-            _etat.update { Etat(cleValide = false, alerte = "Clé refusée") }
-        } else {
-            _etat.update { it.copy(alerte = e.message ?: "Erreur ${e.code}") }
+        when (e.code) {
+            "UNAUTHENTICATED" -> {
+                store.effacer()
+                _etat.value = Etat(cleValide = false, alerteCle = "Clé refusée")
+            }
+            "INTERNAL_SERVER_ERROR" -> afficher("Erreur du serveur, réessayez")
+            else -> afficher(e.message ?: "Erreur")
         }
+    }
+
+    private fun afficher(texte: String) {
+        _etat.update { it.copy(message = texte) }
     }
 }

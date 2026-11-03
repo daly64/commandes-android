@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # nécessaire pour publier la release
+  contents: write # nécessaire pour publier les releases
 
 jobs:
   apk:
@@ -25,19 +25,22 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Compiler l'APK
-        run: ./gradlew assembleDebug --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
         env:
-          # Adresse de l'API (Settings > Secrets and variables > Actions > API_URL)
+          # Adresse de l'API (facultatif : Settings > Secrets and variables > Actions > API_URL)
           API_URL: ${{ secrets.API_URL }}
 
-      - name: Publier l'APK
+      - name: Publier l'APK en artefact
         uses: actions/upload-artifact@v4
         with:
           name: commandes-salon-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      # Publie aussi l'APK dans une release, téléchargeable sans connexion
+      # L'APK est aussi publié dans une release, téléchargeable sans connexion
       - name: Publier dans la release apk-latest
         uses: softprops/action-gh-release@v2
         with:
@@ -46,3 +49,15 @@ jobs:
           body: APK généré automatiquement à partir de la branche main.
           files: app/build/outputs/apk/debug/app-debug.apk
           make_latest: true
+
+      # En cas d'échec, le journal de compilation est publié pour pouvoir être lu sans connexion
+      - name: Publier le journal d'échec
+        if: failure()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-log
+          name: Journal du dernier échec de compilation
+          body: Journal complet de la dernière compilation en échec.
+          files: build.log
+          prerelease: true
+          make_latest: false

@@ -5,10 +5,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
-// Adresse de l'API : variable d'environnement API_URL (secret GitHub), sinon valeur par défaut.
-// Elle doit se terminer par « / ».
+// Adresse de l'API GraphQL : variable d'environnement API_URL (secret GitHub), sinon l'API en ligne.
+// Elle doit se terminer par « / » ; l'application appelle <API_URL>graphql.
 val apiUrl: String = System.getenv("API_URL")?.takeIf { it.isNotBlank() }
-    ?: "https://VOTRE-PROJET.vercel.app/"
+    ?: "https://api-commandes-dun.vercel.app/"
 
 android {
     namespace = "fr.salon.commandes"
@@ -18,8 +18,8 @@ android {
         applicationId = "fr.salon.commandes"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "2.0"
 
         buildConfigField("String", "API_URL", "\"$apiUrl\"")
     }
@@ -49,6 +49,7 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
