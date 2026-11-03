@@ -1,25 +1,24 @@
 # Commandes Salon (Android)
 
-Application Android de prise de commande pour le salon de thé. Elle utilise l'API GraphQL `api-commandes`.
+Application Android de prise de commande pour le salon de thé. Elle utilise l'API GraphQL `api-commandes`. L'accès est libre : il n'y a plus de clé à saisir.
 
 Kotlin, Jetpack Compose (Material 3), OkHttp, kotlinx.serialization.
 
 ## Fonctionnalités
 
-- **Accès** : saisie de la clé du personnel (la même que `API_KEY` côté serveur), sur une carte centrée.
 - **Nouvelle commande** :
   - grille de 10 tables en grandes cases ;
   - produits du menu en cartes, regroupés par catégorie : un appui ajoute une unité, « − » en retire une ;
   - panier fixe en bas de l'écran avec la table, le nombre d'articles, le total en dinars et le bouton d'envoi.
 - **En cours** : une carte par commande, avec une bande de couleur selon le statut, le numéro de table, l'ancienneté, les produits et le bouton de l'étape suivante (Démarrer, Marquer prête, Marquer servie, Marquer payée). Le nombre de commandes s'affiche sur l'onglet.
-- **Temps réel** : abonnement WebSocket natif Vercel (`<API_URL>api/ws`, protocole graphql-ws), mise à jour immédiate à chaque commande créée ou modifiée, reconnexion automatique. Rafraîchissement de secours toutes les 30 s (toutes les 3 s si le flux est coupé).
+- **Temps réel** : abonnement SSE à `<API_URL>graphql`. Chaque commande créée ou modifiée arrive immédiatement ; une commande payée disparaît de la liste. À chaque ouverture du flux, la liste est relue ; en cas de coupure, la reconnexion se fait toutes les 3 s.
 
 ## API utilisée
 
 L'application appelle `<API_URL>graphql`. Par défaut, `API_URL` vaut `https://api-commandes-dun.vercel.app/`.
 Pour viser une autre API, définissez le secret `API_URL` du dépôt (*Settings > Secrets and variables > Actions*), terminé par `/`.
 
-Opérations GraphQL utilisées : `menu`, `commandes`, `creerCommande`, `changerStatut`.
+Opérations GraphQL utilisées : `menu`, `commandes`, `creerCommande`, `changerStatut`, et l'abonnement `commandeModifiee`.
 
 ## Obtenir l'APK
 
@@ -43,15 +42,14 @@ L'APK est produit dans `app/build/outputs/apk/debug/app-debug.apk`.
 ```
 app/src/main/java/fr/salon/commandes/
 ├── MainActivity.kt              point d'entrée
-├── AppViewModel.kt              état, panier, rafraîchissement, actions
+├── AppViewModel.kt              état, panier, flux temps réel, actions
 ├── data/
 │   ├── Modeles.kt               modèles et statuts
-│   ├── ApiClient.kt             client GraphQL
-│   └── CleStore.kt              stockage de la clé
+│   ├── ApiClient.kt             requêtes et mutations GraphQL
+│   └── FluxCommandes.kt         abonnement SSE
 └── ui/
     ├── theme/Theme.kt           couleurs, couleurs des statuts
     ├── Composants.kt            éléments communs (prix, ancienneté, pastille)
-    ├── EcranCle.kt              carte d'accès
     ├── EcranPrincipal.kt        barre du haut, onglets, messages
     ├── EcranNouvelleCommande.kt tables, cartes produits, panier
     └── EcranCommandes.kt        cartes des commandes en cours
@@ -59,7 +57,7 @@ app/src/main/java/fr/salon/commandes/
 
 ## Limites
 
-- La connexion WebSocket est fermée par le serveur toutes les 5 minutes environ (limite Vercel) ; l'application se reconnecte automatiquement.
-- La clé est partagée par tout le personnel et gardée dans le stockage privé de l'application.
+- Le flux SSE est fermé par le serveur au bout de 5 minutes environ (limite Vercel) ; l'application se reconnecte et relit la liste.
 - Le total affiché est calculé dans l'application : l'API n'enregistre pas les prix.
+- L'API n'a pas d'accès protégé : toute personne qui connaît l'adresse peut lire et modifier les commandes.
 - APK de test (debug), non signé pour le Play Store.

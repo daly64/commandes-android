@@ -2,95 +2,94 @@ package fr.salon.commandes.data
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import okhttp3.Call
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Response
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-// Abonnement en temps réel par WebSocket natif Vercel (adresse <API_URL>api/ws, protocole graphql-transport-ws).
-// Le serveur ferme la connexion au bout de quelques minutes ; c'est l'appelant qui se reconnecte.
-class FluxCommandes(private val urlBase: String, private val cle: () -> String) {
+// Abonnement temps réel en SSE : POST sur <API_URL>graphql avec « Accept: text/event-stream ».
+// Le serveur envoie un bloc « event: next » suivi de « data: … » à chaque commande créée ou modifiée.
+// Le flux se ferme après la durée maximale de la fonction Vercel : l'appelant se reconnecte.
+class FluxCommandes(private val urlBase: String) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    // Le flux reste ouvert longtemps : un silence de plus de 2 minutes est traité comme une coupure
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .pingInterval(20, TimeUnit.SECONDS)
+        .readTimeout(2, TimeUnit.MINUTES)
         .build()
 
-    private var socket: WebSocket? = null
+    private val typeJson = "application/json".toMediaType()
+
+    @Volatile
+    private var appel: Call? = null
 
     /**
-     * Ouvre la connexion et s'abonne à commandeModifiee.
-     * [surEvenement] : une commande a changé.
-     * [surEtat] : true quand l'abonnement est actif, false quand la connexion est fermée ou en échec.
+     * Ouvre le flux et le lit jusqu'à sa fermeture. Bloquant : à lancer hors du thread principal.
+     * [surOuverture] : le flux est actif (c'est le moment de relire la liste).
+     * [surCommande] : une commande a été créée ou modifiée.
+     * Lève une IOException en cas de refus ou de coupure.
      */
-    fun demarrer(surEvenement: () -> Unit, surEtat: (Boolean) -> Unit) {
-        arreter()
-
+    fun ecouter(surOuverture: () -> Unit, surCommande: (Commande) -> Unit) {
+        val corps = buildJsonObject { put("query", ABONNEMENT) }.toString().toRequestBody(typeJson)
         val requete = Request.Builder()
-            .url(urlBase + "api/ws")
-            .header("Sec-WebSocket-Protocol", "graphql-transport-ws")
+            .url(urlBase + "graphql")
+            .header("Accept", "text/event-stream")
+            .post(corps)
             .build()
 
-        socket = http.newWebSocket(
-            requete,
-            object : WebSocketListener() {
-                override fun onOpen(webSocket: WebSocket, response: Response) {
-                    // La clé passe dans le message d'ouverture du protocole
-                    val ouverture = buildJsonObject {
-                        put("type", "connection_init")
-                        put("payload", buildJsonObject { put("apiKey", cle()) })
-                    }
-                    webSocket.send(ouverture.toString())
-                }
+        val nouvelAppel = http.newCall(requete)
+        appel = nouvelAppel
+        nouvelAppel.execute().use { reponse ->
+            if (!reponse.isSuccessful) throw IOException("Flux refusé (${reponse.code})")
+            surOuverture()
 
-                override fun onMessage(webSocket: WebSocket, text: String) {
-                    val message = try {
-                        json.parseToJsonElement(text).jsonObject
-                    } catch (e: Exception) {
-                        return
-                    }
-                    when (message["type"]?.jsonPrimitive?.contentOrNull) {
-                        "connection_ack" -> {
-                            webSocket.send(ABONNEMENT)
-                            surEtat(true)
-                        }
-                        "next" -> surEvenement()
-                        "ping" -> webSocket.send(PONG)
-                        "error", "complete" -> webSocket.close(1000, null)
-                    }
+            val source = reponse.body?.source() ?: throw IOException("Flux vide")
+            val bloc = StringBuilder()
+            while (true) {
+                val ligne = source.readUtf8Line() ?: break
+                if (ligne.isEmpty()) {
+                    lireCommande(bloc.toString())?.let(surCommande)
+                    bloc.clear()
+                } else {
+                    bloc.append(ligne).append('\n')
                 }
-
-                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                    webSocket.close(1000, null)
-                }
-
-                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    surEtat(false)
-                }
-
-                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    surEtat(false)
-                }
-            },
-        )
+            }
+        }
     }
 
     fun arreter() {
-        socket?.close(1000, "Arrêt")
-        socket = null
+        appel?.cancel()
+        appel = null
+    }
+
+    // Lit un bloc SSE ; renvoie la commande s'il s'agit d'un événement « next »
+    private fun lireCommande(bloc: String): Commande? {
+        var evenement = "message"
+        val donnees = StringBuilder()
+        for (ligne in bloc.lines()) {
+            when {
+                ligne.startsWith("event:") -> evenement = ligne.removePrefix("event:").trim()
+                ligne.startsWith("data:") -> donnees.append(ligne.removePrefix("data:").trim())
+            }
+        }
+        if (evenement != "next" || donnees.isEmpty()) return null
+        return try {
+            val commande = json.parseToJsonElement(donnees.toString())
+                .jsonObject["data"]?.jsonObject?.get("commandeModifiee")
+            commande?.let { json.decodeFromJsonElement(Commande.serializer(), it) }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private companion object {
-        const val ABONNEMENT =
-            """{"id":"1","type":"subscribe","payload":{"query":"subscription { commandeModifiee { id statut } }"}}"""
-        const val PONG = """{"type":"pong"}"""
+        const val ABONNEMENT = "subscription { commandeModifiee { id table statut creeeLe lignes { produit quantite } } }"
     }
 }

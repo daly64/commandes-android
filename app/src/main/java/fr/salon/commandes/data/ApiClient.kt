@@ -39,7 +39,7 @@ private val MUTATION_STATUT = """
 """
 
 // Accès à l'API GraphQL. Fonctions bloquantes : à appeler hors du thread principal (Dispatchers.IO).
-class ApiClient(private val urlBase: String, private val cle: () -> String) {
+class ApiClient(private val urlBase: String) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -85,7 +85,6 @@ class ApiClient(private val urlBase: String, private val cle: () -> String) {
 
         val requeteHttp = Request.Builder()
             .url(urlBase + "graphql")
-            .header("X-Api-Key", cle())
             .post(corps)
             .build()
 

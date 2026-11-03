@@ -7,14 +7,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -39,11 +37,6 @@ import fr.salon.commandes.AppViewModel
 fun EcranPrincipal(vm: AppViewModel) {
     val etat by vm.etat.collectAsState()
 
-    if (!etat.cleValide) {
-        EcranCle(alerte = etat.alerteCle, onValider = { cle -> vm.valider(cle) })
-        return
-    }
-
     var onglet by rememberSaveable { mutableIntStateOf(0) }
     val snackbar = remember { SnackbarHostState() }
 
@@ -65,23 +58,14 @@ fun EcranPrincipal(vm: AppViewModel) {
                         val sousTitre = when {
                             etat.connexion.isNotEmpty() -> etat.connexion
                             etat.tempsReel -> "● Temps réel actif"
-                            else -> "Actualisation toutes les 3 s"
+                            else -> "Connexion au temps réel…"
                         }
                         Text(text = sousTitre, style = MaterialTheme.typography.labelSmall)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { vm.deconnecter() }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ExitToApp,
-                            contentDescription = "Changer de clé",
-                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
             )
         },
