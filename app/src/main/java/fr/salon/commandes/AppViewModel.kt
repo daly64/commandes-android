@@ -7,6 +7,7 @@ import fr.salon.commandes.data.ApiClient
 import fr.salon.commandes.data.CleStore
 import fr.salon.commandes.data.Commande
 import fr.salon.commandes.data.ErreurApi
+import fr.salon.commandes.data.FluxCommandes
 import fr.salon.commandes.data.LigneCommande
 import fr.salon.commandes.data.Menu
 import fr.salon.commandes.data.Statut
@@ -22,7 +23,9 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.IOException
 
-private const val INTERVALLE_MS = 3000L
+private const val INTERVALLE_SANS_FLUX_MS = 3_000L   // rafraîchissement quand le temps réel est coupé
+private const val INTERVALLE_AVEC_FLUX_MS = 30_000L  // rafraîchissement de secours quand il fonctionne
+private const val VERIFICATION_FLUX_MS = 5_000L      // délai avant de rouvrir un flux fermé
 private const val QUANTITE_MAX = 50
 
 // Tout ce que l'interface affiche
@@ -36,6 +39,7 @@ data class Etat(
     val envoiEnCours: Boolean = false,
     val enCours: Set<String> = emptySet(),   // commandes dont le statut est en train de changer
     val connexion: String = "",              // problème de liaison avec le serveur
+    val tempsReel: Boolean = false,          // flux SSE ouvert
     val message: String? = null,             // message ponctuel (barre en bas de l'écran)
 )
 
@@ -43,6 +47,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val store = CleStore(application)
     private val api = ApiClient(BuildConfig.API_URL) { store.lire().orEmpty() }
+    private val flux = FluxCommandes(BuildConfig.API_URL) { store.lire().orEmpty() }
+
+    @Volatile
+    private var fluxEnConnexion = false
 
     // Une seule lecture à la fois, pour que les réponses s'appliquent dans l'ordre
     private val verrou = Mutex()
@@ -51,13 +59,41 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val etat: StateFlow<Etat> = _etat.asStateFlow()
 
     init {
-        // Interrogation régulière de l'API ; s'arrête quand le ViewModel est détruit
+        // Rafraîchissement régulier : rapide sans temps réel, de secours avec
         viewModelScope.launch {
             while (true) {
                 rafraichir()
-                delay(INTERVALLE_MS)
+                delay(if (_etat.value.tempsReel) INTERVALLE_AVEC_FLUX_MS else INTERVALLE_SANS_FLUX_MS)
             }
         }
+        // Ouverture et réouverture du flux temps réel tant que la clé est valide
+        viewModelScope.launch {
+            while (true) {
+                val etat = _etat.value
+                if (etat.cleValide && !etat.tempsReel && !fluxEnConnexion) {
+                    ouvrirFlux()
+                }
+                delay(VERIFICATION_FLUX_MS)
+            }
+        }
+    }
+
+    private fun ouvrirFlux() {
+        fluxEnConnexion = true
+        flux.demarrer(
+            surEvenement = { viewModelScope.launch { rafraichir() } },
+            surEtat = { ouvert ->
+                fluxEnConnexion = false
+                _etat.update { it.copy(tempsReel = ouvert) }
+                // À l'ouverture, on relit la liste pour ne rien manquer pendant la coupure
+                if (ouvert) viewModelScope.launch { rafraichir() }
+            },
+        )
+    }
+
+    override fun onCleared() {
+        flux.arreter()
+        super.onCleared()
     }
 
     // --- Clé d'accès ---
@@ -69,6 +105,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deconnecter() {
+        flux.arreter()
+        fluxEnConnexion = false
         store.effacer()
         _etat.value = Etat(cleValide = false)
     }
@@ -191,6 +229,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun gererErreur(e: ErreurApi) {
         when (e.code) {
             "UNAUTHENTICATED" -> {
+                flux.arreter()
+                fluxEnConnexion = false
                 store.effacer()
                 _etat.value = Etat(cleValide = false, alerteCle = "Clé refusée")
             }

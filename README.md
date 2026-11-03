@@ -12,7 +12,7 @@ Kotlin, Jetpack Compose (Material 3), OkHttp, kotlinx.serialization.
   - produits du menu en cartes, regroupés par catégorie : un appui ajoute une unité, « − » en retire une ;
   - panier fixe en bas de l'écran avec la table, le nombre d'articles, le total en dinars et le bouton d'envoi.
 - **En cours** : une carte par commande, avec une bande de couleur selon le statut, le numéro de table, l'ancienneté, les produits et le bouton de l'étape suivante (Démarrer, Marquer prête, Marquer servie, Marquer payée). Le nombre de commandes s'affiche sur l'onglet.
-- Rafraîchissement automatique toutes les 3 secondes.
+- **Temps réel** : abonnement SSE à l'API, mise à jour immédiate à chaque commande créée ou modifiée, reconnexion automatique. Rafraîchissement de secours toutes les 30 s (toutes les 3 s si le flux est coupé).
 
 ## API utilisée
 
@@ -59,7 +59,7 @@ app/src/main/java/fr/salon/commandes/
 
 ## Limites
 
-- Pas de temps réel : l'API sur Vercel n'accepte pas les WebSockets, l'application interroge donc l'API toutes les 3 secondes.
+- Le flux SSE est fermé par le serveur toutes les 5 minutes environ (limite Vercel) ; l'application se reconnecte automatiquement.
 - La clé est partagée par tout le personnel et gardée dans le stockage privé de l'application.
 - Le total affiché est calculé dans l'application : l'API n'enregistre pas les prix.
 - APK de test (debug), non signé pour le Play Store.

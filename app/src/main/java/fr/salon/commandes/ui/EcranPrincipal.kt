@@ -62,9 +62,12 @@ fun EcranPrincipal(vm: AppViewModel) {
                 title = {
                     Column {
                         Text(text = "Commandes")
-                        if (etat.connexion.isNotEmpty()) {
-                            Text(text = etat.connexion, style = MaterialTheme.typography.labelSmall)
+                        val sousTitre = when {
+                            etat.connexion.isNotEmpty() -> etat.connexion
+                            etat.tempsReel -> "● Temps réel actif"
+                            else -> "Actualisation toutes les 3 s"
                         }
+                        Text(text = sousTitre, style = MaterialTheme.typography.labelSmall)
                     }
                 },
                 actions = {
