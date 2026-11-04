@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,39 +29,61 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import fr.salon.commandes.AppViewModel
 import fr.salon.commandes.Etat
 import fr.salon.commandes.data.Produit
 
 private const val NOMBRE_TABLES = 10
-private const val TABLES_PAR_RANGEE = 5
 
+// Tables et recherche restent en haut ; la liste des produits défile dessous ; le panier reste en bas
 @Composable
 fun EcranNouvelleCommande(etat: Etat, vm: AppViewModel) {
     val menu = etat.menu
+    var recherche by rememberSaveable { mutableStateOf("") }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            item(key = "tables") {
-                CarteTables(table = etat.table, onChoisir = { numero -> vm.choisirTable(numero) })
+        Surface(shadowElevation = 2.dp, color = MaterialTheme.colorScheme.surface) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
+                BandeauTables(table = etat.table, onChoisir = { numero -> vm.choisirTable(numero) })
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = recherche,
+                    onValueChange = { recherche = it },
+                    placeholder = { Text("Rechercher un produit") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
+        }
 
-            if (menu == null) {
-                item(key = "chargement") { CarteInfo(texte = "Chargement du menu…") }
-            } else {
-                val produitsVisibles = menu.produits.filter { it.visible }
+        if (menu == null) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                CarteInfo(texte = "Chargement du menu…")
+            }
+        } else {
+            val terme = recherche.trim()
+            val produitsVisibles = menu.produits.filter {
+                it.visible && (terme.isEmpty() || it.nom.contains(terme, ignoreCase = true))
+            }
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 for (categorie in menu.categories.filter { it.visible }) {
                     val produits = produitsVisibles.filter { it.categorieId == categorie.id }
                     if (produits.isEmpty()) continue
@@ -87,48 +111,34 @@ fun EcranNouvelleCommande(etat: Etat, vm: AppViewModel) {
     }
 }
 
-// Grille de 10 tables, en deux rangées de 5 grandes cases faciles à toucher
+// Les 10 tables sur une seule ligne, toujours visibles
 @Composable
-private fun CarteTables(table: Int?, onChoisir: (Int) -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = "Table", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(10.dp))
-            for (rangee in 0 until NOMBRE_TABLES / TABLES_PAR_RANGEE) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = if (rangee > 0) 8.dp else 0.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    for (colonne in 1..TABLES_PAR_RANGEE) {
-                        val numero = rangee * TABLES_PAR_RANGEE + colonne
-                        val choisie = table == numero
-                        Surface(
-                            onClick = { onChoisir(numero) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (choisie) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (choisie) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(52.dp),
-                        ) {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = "$numero",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-                        }
-                    }
+private fun BandeauTables(table: Int?, onChoisir: (Int) -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (numero in 1..NOMBRE_TABLES) {
+            val choisie = table == numero
+            Surface(
+                onClick = { onChoisir(numero) },
+                shape = RoundedCornerShape(8.dp),
+                color = if (choisie) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = if (choisie) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(44.dp),
+            ) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "$numero",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             }
         }
     }
 }
 
-// Carte produit : un appui ajoute une unité ; « − » en retire une
+// Carte produit : un appui sur la carte ajoute une unité ; le compteur « − n + » apparaît dès qu'un produit est choisi
 @Composable
 private fun CarteProduit(produit: Produit, quantite: Int, onAjouter: () -> Unit, onRetirer: () -> Unit) {
     val choisi = quantite > 0
@@ -142,7 +152,7 @@ private fun CarteProduit(produit: Produit, quantite: Int, onAjouter: () -> Unit,
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -154,17 +164,20 @@ private fun CarteProduit(produit: Produit, quantite: Int, onAjouter: () -> Unit,
                 )
             }
             if (choisi) {
-                FilledTonalIconButton(onClick = onRetirer) {
+                FilledTonalIconButton(onClick = onRetirer, modifier = Modifier.size(40.dp)) {
                     Text(text = "−", style = MaterialTheme.typography.titleLarge)
                 }
                 Text(
                     text = "$quantite",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 10.dp),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .widthIn(min = 32.dp)
+                        .padding(horizontal = 8.dp),
                 )
             }
-            FilledIconButton(onClick = onAjouter) {
+            FilledIconButton(onClick = onAjouter, modifier = Modifier.size(40.dp)) {
                 Icon(imageVector = Icons.Filled.Add, contentDescription = "Ajouter ${produit.nom.trim()}")
             }
         }
@@ -181,11 +194,19 @@ private fun CartePanier(etat: Etat, onVider: () -> Unit, onEnvoyer: () -> Unit) 
     }
     val table = etat.table
 
+    // Le libellé du bouton indique ce qui manque avant l'envoi
+    val libelleBouton = when {
+        etat.envoiEnCours -> "Envoi…"
+        table == null -> "Choisissez une table"
+        articles == 0 -> "Ajoutez des produits"
+        else -> "Envoyer en cuisine"
+    }
+
     Surface(shadowElevation = 8.dp, color = MaterialTheme.colorScheme.surface) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
@@ -209,12 +230,12 @@ private fun CartePanier(etat: Etat, onVider: () -> Unit, onEnvoyer: () -> Unit) 
                 enabled = !etat.envoiEnCours && articles > 0 && table != null,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 10.dp)
+                    .padding(top = 8.dp)
                     .height(52.dp),
             ) {
                 Icon(imageVector = Icons.AutoMirrored.Filled.Send, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(text = if (etat.envoiEnCours) "Envoi…" else "Envoyer en cuisine")
+                Text(text = libelleBouton)
             }
         }
     }

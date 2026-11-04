@@ -7,10 +7,15 @@ Kotlin, Jetpack Compose (Material 3), OkHttp, kotlinx.serialization.
 ## Fonctionnalités
 
 - **Nouvelle commande** :
-  - grille de 10 tables en grandes cases ;
-  - produits du menu en cartes, regroupés par catégorie : un appui ajoute une unité, « − » en retire une ;
-  - panier fixe en bas de l'écran avec la table, le nombre d'articles, le total en dinars et le bouton d'envoi.
-- **En cours** : une carte par commande, avec une bande de couleur selon le statut, le numéro de table, l'ancienneté, les produits et le bouton de l'étape suivante (Démarrer, Marquer prête, Marquer servie, Marquer payée). Le nombre de commandes s'affiche sur l'onglet.
+  - bandeau des 10 tables toujours visible en haut de l'écran ;
+  - recherche de produit par nom ;
+  - produits regroupés par catégorie : un appui sur la carte ajoute une unité, le compteur « − n + » apparaît ensuite ;
+  - panier fixe en bas de l'écran avec la table, le nombre d'articles, le total en dinars ; le bouton indique ce qui manque (choisir une table, ajouter des produits).
+- **En cours** :
+  - filtres par statut en haut (Toutes, En attente, En préparation, Prêtes, Servies), avec le nombre de commandes dans chacun ;
+  - une carte par commande : bande de couleur selon le statut, table, ancienneté, produits et bouton de l'étape suivante (Démarrer, Marquer prête, Marquer servie, Marquer payée) ;
+  - une commande non prête depuis plus de 15 minutes passe en rouge, avec la mention « en retard ».
+  Le nombre de commandes s'affiche sur l'onglet.
 - **Temps réel** : abonnement SSE à `<API_URL>graphql`. Chaque commande créée ou modifiée arrive immédiatement ; une commande payée disparaît de la liste. À chaque ouverture du flux, la liste est relue ; en cas de coupure, la reconnexion se fait toutes les 3 s.
 
 ## API utilisée
